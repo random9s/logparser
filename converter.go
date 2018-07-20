@@ -9,23 +9,33 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
-	geoip2 "github.com/oschwald/geoip2-golang"
+	"github.com/oschwald/geoip2-golang"
+	"github.com/pkg/profile"
 	"github.com/pquerna/ffjson/ffjson"
+
 	"github.com/random9s/Analytics-Pipeline/cache"
 	"github.com/random9s/Analytics-Pipeline/log"
 )
 
 //Available flags
 var (
-	fname string
-	help  bool
+	fname    string
+	help     bool
+	in       bool
+	cpu, mem bool
 )
 
 func parseFlags() {
 	flag.StringVar(&fname, "f", "", "log file name")
+	flag.BoolVar(&cpu, "cpu", false, "profile cpu (can only run cpu or mem, not both)")
+	flag.BoolVar(&mem, "mem", false, "profile memory (can only run cpu or mem, not both)")
+	flag.BoolVar(&in, "i", false, "read from stdin")
 	flag.BoolVar(&help, "h", false, "print help")
 	flag.Parse()
 
@@ -34,7 +44,7 @@ func parseFlags() {
 		os.Exit(0)
 	}
 
-	if fname == "" {
+	if fname == "" && !in {
 		flag.PrintDefaults()
 		fmt.Println("file name must be provided")
 		os.Exit(1)
@@ -55,56 +65,53 @@ var csvFields = []string{
 	"event_ori",          //2
 	"event_uid",          //3
 	"event_ord",          //4
-	"uri_p",              //5
-	"uri_did",            //6
-	"uri_v",              //7
-	"event_lc",           //8
-	"uri_n",              //9
-	"event_lf",           //10
-	"uri_l",              //11
-	"event_dr",           //12
-	"event_sp",           //13
-	"uri_tz",             //14
-	"event_st",           //15
-	"remote_addr",        //16
-	"uri_av",             //17
-	"event_rid",          //18
-	"uri_access_token",   //19
-	"uri_an",             //20
-	"uri_app",            //21
-	"request_time_float", //22
-	"event_res",          //23
-	"uri_ov",             //24
-	"uri_os",             //25
-	"event_typ",          //26
-	"uri_kv",             //27
-	"event_ct",           //28
-	"uri_sv",             //29
-	"client_id",          //30
-	"request_uri",        //31
-	"event_vs",           //32
-	"event_ps",           //33
-	"event_ts",           //34
-	"event_n",            //35
-	"event_m",            //36
-	"event_tc",           //37
-	"uri_dm",             //38
-	"uri_fv",             //39
-	"event_tg",           //40
-	"event_sn",           //41
-	"uri_q",              //42
-	"uri_appkey",         //43
-	"uri_tmp",            //44
-	"uri_length",         //45
-	"uri_pretty",         //46
-	"uri_uid",            //47
-	"uri_title",          //48
-	"uri_category",       //49
-	"uri_id",             //50
-	"event_sc",           //51
-	"uri_f",              //52
-	"geo_country",        //53
-	"geo_city",           //54
+	"uri_did",            //5
+	"event_lc",           //6
+	"uri_n",              //7
+	"event_lf",           //8
+	"uri_l",              //9
+	"event_dr",           //10
+	"event_sp",           //11
+	"uri_tz",             //12
+	"event_st",           //13
+	"remote_addr",        //14
+	"uri_av",             //15
+	"event_rid",          //16
+	"uri_access_token",   //17
+	"uri_an",             //18
+	"uri_app",            //19
+	"request_time_float", //20
+	"event_res",          //21
+	"uri_ov",             //22
+	"uri_os",             //23
+	"event_typ",          //24
+	"uri_kv",             //25
+	"event_ct",           //26
+	"uri_sv",             //27
+	"client_id",          //28
+	"request_uri",        //29
+	"event_vs",           //30
+	"event_ps",           //31
+	"event_ts",           //32
+	"event_n",            //33
+	"event_m",            //34
+	"event_tc",           //35
+	"uri_dm",             //36
+	"uri_fv",             //37
+	"event_tg",           //38
+	"event_sn",           //39
+	"uri_q",              //40
+	"uri_appkey",         //41
+	"uri_length",         //42
+	"uri_pretty",         //43
+	"uri_uid",            //44
+	"uri_title",          //45
+	"uri_category",       //46
+	"uri_id",             //47
+	"event_sc",           //48
+	"uri_f",              //49
+	"geo_country",        //50
+	"geo_city",           //51
 }
 
 func handleLog(c *cache.Cache, db *geoip2.Reader, logT *log.Log) []string {
@@ -117,44 +124,65 @@ func handleLog(c *cache.Cache, db *geoip2.Reader, logT *log.Log) []string {
 		out[2] = e.Ori
 		out[3] = e.UID
 		out[4] = e.Ord
-		out[8] = strconv.FormatInt(e.Lc, 10)
-		out[10] = strconv.FormatInt(e.Lf, 10)
-		out[12] = strconv.FormatInt(e.Dr, 10)
-		out[13] = e.Sp
-		out[15] = e.St
-		out[18] = e.Rid
-		out[23] = strconv.FormatInt(e.Resolution, 10)
-		out[26] = strconv.FormatInt(e.Type, 10)
-		out[28] = strconv.FormatInt(e.Ct, 10)
-		out[32] = e.Vs
-		out[33] = e.Ps
-		out[34] = strconv.FormatInt(e.Timestamp, 10)
-		out[35] = e.Name
-		out[36] = e.M
-		out[37] = strconv.FormatInt(e.Tc, 10)
-		out[40] = e.Tg
-		out[41] = e.Sn
-		out[51] = e.Sc
+		out[6] = strconv.FormatInt(e.Lc, 10)
+		out[8] = strconv.FormatInt(e.Lf, 10)
+		out[10] = strconv.FormatInt(e.Dr, 10)
+		out[11] = e.Sp
+		out[13] = e.St
+		out[16] = e.Rid
+		out[21] = strconv.FormatInt(e.Resolution, 10)
+		out[24] = strconv.FormatInt(e.Type, 10)
+		out[26] = strconv.FormatInt(e.Ct, 10)
+		out[30] = e.Vs
+		out[31] = e.Ps
+
+		var res = strconv.FormatInt(e.Timestamp, 10)
+		if e.Timestamp > 0 {
+			var t1 = int64(e.Timestamp / 1000)
+			var ut = time.Unix(t1, 0)
+			res = ut.Format("2006-01-02 03:04:05.0")
+		}
+		out[32] = res
+
+		out[33] = e.Name
+		out[34] = e.M
+		out[35] = strconv.FormatInt(e.Tc, 10)
+		out[38] = e.Tg
+		out[39] = e.Sn
+		out[48] = e.Sc
 	}
 
 	//loop key/value of request parameters
 	u, err := logT.ParseReqURI()
 	exitOnErr(err)
 	for k, v := range u.Query() {
-		var k = fmt.Sprintf("uri_%s", strings.ToLower(k))
+		var k = "uri_" + strings.ToLower(k)
+		var vStr = strings.Join(v, "+")
+
 		for i := 0; i < len(csvFields); i++ {
 			if strings.Compare(k, csvFields[i]) == 0 {
-				out[i] = strings.Join(v, "+")
+				out[i] = vStr
 			}
+		}
+
+		switch k {
+		case "uri_d":
+			out[5] = vStr
+		case "uri_dt":
+			out[36] = vStr
+		case "uri_v":
+			out[27] = vStr
+		case "uri_p":
+			out[37] = vStr
 		}
 	}
 
 	//Add remainding stuff
 	out[1] = logT.HTTPUserAgent
-	out[16] = logT.RemoteAddr
-	out[22] = strconv.FormatFloat(logT.ReqTime, 'E', -1, 64)
-	out[30] = logT.ClientID
-	out[31] = logT.ReqURI
+	out[14] = logT.RemoteAddr
+	out[20] = logT.ParseRequestTime()
+	out[28] = logT.ClientID
+	out[29] = logT.ReqURI
 
 	var cleanIP = strings.Trim(logT.RemoteAddr, "\n")
 	var city, country string
@@ -176,14 +204,24 @@ func handleLog(c *cache.Cache, db *geoip2.Reader, logT *log.Log) []string {
 		c.Add(cleanIP, city, country)
 	}
 
-	out[53] = country
-	out[54] = city
+	out[50] = country
+	out[51] = city
 	return out
 }
 
-func main() {
-	parseFlags()
+type customWriter struct {
+	fp *os.File
+	w  *csv.Writer
+}
 
+func main() {
+	if cpu {
+		defer profile.Start().Stop()
+	} else if mem {
+		defer profile.Start(profile.MemProfile).Stop()
+	}
+
+	parseFlags()
 	//prep cache
 	c := cache.New()
 
@@ -192,46 +230,58 @@ func main() {
 	exitOnErr(err)
 	defer db.Close()
 
-	//open gzip file
-	fp, err := os.Open(fname)
-	exitOnErr(err)
-	defer fp.Close()
+	//create reader to read data from source
+	var reader *bufio.Reader
+	if fname != "" {
+		//open gzip file
+		fp, err := os.Open(fname)
+		exitOnErr(err)
+		defer fp.Close()
 
-	//Create gzip reader
-	zipReader, err := gzip.NewReader(fp)
-	exitOnErr(err)
-	defer zipReader.Close()
+		//Create gzip reader
+		zipReader, err := gzip.NewReader(fp)
+		exitOnErr(err)
+		defer zipReader.Close()
 
-	//wrap zip reader in bufio
-	reader := bufio.NewReader(zipReader)
+		//wrap zip reader in bufio
+		reader = bufio.NewReader(zipReader)
+	} else if in {
+		zipReader, err := gzip.NewReader(os.Stdin)
+		exitOnErr(err)
 
-	//create out file
-	var spl = strings.Split(fname, ".")
-	var baseName = spl[0]
-	var outpath = fmt.Sprintf("%s.csv.gz", baseName)
-	outfp, err := os.OpenFile(outpath, os.O_RDWR|os.O_CREATE, 0666)
-	exitOnErr(err)
-	defer outfp.Close()
+		reader = bufio.NewReader(zipReader)
+	}
 
-	//create csv gzipped writer
-	//csvfp := csv.NewWriter(gzip.NewWriter(outfp))
-	csvfp := csv.NewWriter(outfp)
+	//create map for files and close all files on exit
+	var dateFiles = make(map[string]*customWriter)
 
-	//write csv header
-	exitOnErr(csvfp.Write(csvFields))
-	csvfp.Flush()
-	exitOnErr(csvfp.Error())
-
+	//all log lines start with something similar to this, so we'll just cut this from the beginning of every line
+	var trimN = len("[2017-12-01 20:55:08 ~ SDK ~ 0] ")
+	//read until EOF
 	for {
-		//Read and parse json log
+		//Read and clean json line
 		line, err := reader.ReadString('\n')
 		if err == io.EOF {
 			break
 		}
 		exitOnErr(err)
 
-		spl := strings.Split(line, " ~ SDK ~ 0] ")
-		line = strings.TrimRight(spl[1], "\n")
+		//All log lines should begin with the same thing, so we can trim that immediately
+		line = line[trimN:]
+
+		//Always remove newline
+		if line[len(line)-1] == byte(10) {
+			line = line[:len(line)-1]
+		}
+
+		//check if bad value exists and replace with empty string
+		if strings.Contains(line, "\"event\":[]") {
+			line = strings.Replace(line, "\"event\":[]", "", 1)
+			//check if beginning of bad value exists and replace with empty string
+		} else if strings.Contains(line, "\"event\":[") {
+			re := regexp.MustCompile("\"event\":[*]")
+			line = re.ReplaceAllString(line, "")
+		}
 
 		//unmarshal new log line
 		var logT = new(log.Log)
@@ -240,9 +290,30 @@ func main() {
 		//create csv line
 		var csvLine = handleLog(c, db, logT)
 
-		//write csv line
-		exitOnErr(csvfp.Write(csvLine))
-		csvfp.Flush()
-		exitOnErr(csvfp.Error())
+		//var t1 = logT.ParseRequestTime()
+		var t1 = csvLine[20] //request time
+		var outfile = fmt.Sprintf("%s/sdk-log-%s.csv.gz", filepath.Dir(fname), strings.Replace(strings.Split(t1, " ")[0], "-", ".", -1))
+		cw, exists := dateFiles[outfile]
+		if !exists {
+			//create and wrap file pointer with gzipped csv writer
+			fp, err := os.OpenFile(outfile, os.O_RDWR|os.O_CREATE, 0766)
+			exitOnErr(err)
+			w := csv.NewWriter(gzip.NewWriter(fp))
+			//create new custom writer
+			cw = &customWriter{
+				fp,
+				w,
+			}
+			//store for later use
+			dateFiles[outfile] = cw
+		}
+
+		exitOnErr(cw.w.Write(csvLine))
+		cw.w.Flush()
+		exitOnErr(cw.w.Error())
+	}
+
+	for _, v := range dateFiles {
+		v.fp.Close()
 	}
 }

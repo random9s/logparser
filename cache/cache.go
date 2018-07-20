@@ -18,13 +18,13 @@ type Cache struct {
 //New checks for saved cache file and loads, if exists, or creates empty cache
 func New() *Cache {
 	var c *Cache
-	c, err := fromDisk()
-	if err != nil {
-		c = &Cache{
-			make(map[string][]string),
-			new(sync.RWMutex),
-		}
+	//	c, err := fromDisk()
+	//	if err != nil {
+	c = &Cache{
+		make(map[string][]string),
+		new(sync.RWMutex),
 	}
+	//}
 
 	return c
 }

@@ -1,14 +1,6 @@
 package main
 
-import (
-	"compress/gzip"
-	"encoding/csv"
-	"flag"
-	"fmt"
-	"log"
-	"os"
-)
-
+/*
 func main() {
 	var fname string
 	flag.StringVar(&fname, "f", "", "csv file name")
@@ -37,3 +29,4 @@ func main() {
 
 	fmt.Println(records[:4])
 }
+*/
