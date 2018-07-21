@@ -11,8 +11,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/oschwald/geoip2-golang"
@@ -29,6 +31,7 @@ var (
 	help     bool
 	in       bool
 	cpu, mem bool
+	tuner    int
 )
 
 func parseFlags() {
@@ -37,6 +40,7 @@ func parseFlags() {
 	flag.BoolVar(&mem, "mem", false, "profile memory (can only run cpu or mem, not both)")
 	flag.BoolVar(&in, "i", false, "read from stdin")
 	flag.BoolVar(&help, "h", false, "print help")
+	flag.IntVar(&tuner, "t", 1, "number will be multiplied by number of logical cores")
 	flag.Parse()
 
 	if help {
@@ -214,6 +218,46 @@ type customWriter struct {
 	w  *csv.Writer
 }
 
+func fanOut(in chan *string, out chan *[]string, wg *sync.WaitGroup, c *cache.Cache, db *geoip2.Reader) {
+	wg.Add(1)
+
+	go func() {
+		//all log lines start with something similar to this, so we'll just cut this from the beginning of every line
+		var trimN = len("[2017-12-01 20:55:08 ~ SDK ~ 0] ")
+
+		for linePtr := range in {
+			line := *linePtr
+
+			//All log lines should begin with the same thing, so we can trim that immediately
+			line = line[trimN:]
+
+			//Always remove newline
+			if line[len(line)-1] == byte(10) {
+				line = line[:len(line)-1]
+			}
+
+			//check if bad value exists and replace with empty string
+			if strings.Contains(line, "\"event\":[]") {
+				line = strings.Replace(line, "\"event\":[]", "", 1)
+				//check if beginning of bad value exists and replace with empty string
+			} else if strings.Contains(line, "\"event\":[") {
+				re := regexp.MustCompile("\"event\":[*]")
+				line = re.ReplaceAllString(line, "")
+			}
+
+			//unmarshal new log line
+			var logT = new(log.Log)
+			exitOnErr(ffjson.Unmarshal([]byte(line), logT))
+
+			//create csv line
+			var csvLine = handleLog(c, db, logT)
+			out <- &csvLine
+		}
+
+		wg.Done()
+	}()
+}
+
 func main() {
 	if cpu {
 		defer profile.Start().Stop()
@@ -222,6 +266,7 @@ func main() {
 	}
 
 	parseFlags()
+
 	//prep cache
 	c := cache.New()
 
@@ -255,8 +300,43 @@ func main() {
 	//create map for files and close all files on exit
 	var dateFiles = make(map[string]*customWriter)
 
-	//all log lines start with something similar to this, so we'll just cut this from the beginning of every line
-	var trimN = len("[2017-12-01 20:55:08 ~ SDK ~ 0] ")
+	var in = make(chan *string)
+	var out = make(chan *[]string)
+	var wg = sync.WaitGroup{}
+
+	for i := 0; i < runtime.NumCPU()*tuner; i++ {
+		fanOut(in, out, &wg, c, db)
+	}
+
+	go func() {
+		for csvLinePtr := range out {
+			var csvLine = *csvLinePtr
+
+			//var t1 = logT.ParseRequestTime()
+			var t1 = csvLine[20] //request time
+			var outfile = fmt.Sprintf("%s/sdk-log-%s.csv.gz", filepath.Dir(fname), strings.Replace(strings.Split(t1, " ")[0], "-", ".", -1))
+
+			cw, exists := dateFiles[outfile]
+			if !exists {
+				//create and wrap file pointer with gzipped csv writer
+				fp, err := os.OpenFile(outfile, os.O_RDWR|os.O_CREATE, 0766)
+				exitOnErr(err)
+				w := csv.NewWriter(gzip.NewWriter(fp))
+				//create new custom writer
+				cw = &customWriter{
+					fp,
+					w,
+				}
+				//store for later use
+				dateFiles[outfile] = cw
+			}
+
+			exitOnErr(cw.w.Write(csvLine))
+			cw.w.Flush()
+			exitOnErr(cw.w.Error())
+		}
+	}()
+
 	//read until EOF
 	for {
 		//Read and clean json line
@@ -266,52 +346,12 @@ func main() {
 		}
 		exitOnErr(err)
 
-		//All log lines should begin with the same thing, so we can trim that immediately
-		line = line[trimN:]
-
-		//Always remove newline
-		if line[len(line)-1] == byte(10) {
-			line = line[:len(line)-1]
-		}
-
-		//check if bad value exists and replace with empty string
-		if strings.Contains(line, "\"event\":[]") {
-			line = strings.Replace(line, "\"event\":[]", "", 1)
-			//check if beginning of bad value exists and replace with empty string
-		} else if strings.Contains(line, "\"event\":[") {
-			re := regexp.MustCompile("\"event\":[*]")
-			line = re.ReplaceAllString(line, "")
-		}
-
-		//unmarshal new log line
-		var logT = new(log.Log)
-		exitOnErr(ffjson.Unmarshal([]byte(line), logT))
-
-		//create csv line
-		var csvLine = handleLog(c, db, logT)
-
-		//var t1 = logT.ParseRequestTime()
-		var t1 = csvLine[20] //request time
-		var outfile = fmt.Sprintf("%s/sdk-log-%s.csv.gz", filepath.Dir(fname), strings.Replace(strings.Split(t1, " ")[0], "-", ".", -1))
-		cw, exists := dateFiles[outfile]
-		if !exists {
-			//create and wrap file pointer with gzipped csv writer
-			fp, err := os.OpenFile(outfile, os.O_RDWR|os.O_CREATE, 0766)
-			exitOnErr(err)
-			w := csv.NewWriter(gzip.NewWriter(fp))
-			//create new custom writer
-			cw = &customWriter{
-				fp,
-				w,
-			}
-			//store for later use
-			dateFiles[outfile] = cw
-		}
-
-		exitOnErr(cw.w.Write(csvLine))
-		cw.w.Flush()
-		exitOnErr(cw.w.Error())
+		in <- &line
 	}
+
+	close(in)
+	wg.Wait()
+	close(out)
 
 	for _, v := range dateFiles {
 		v.fp.Close()
