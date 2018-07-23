@@ -357,6 +357,7 @@ func main() {
 		}
 
 		done <- true
+		fmt.Println("done")
 	}()
 
 	//read until EOF
@@ -376,8 +377,10 @@ func main() {
 
 	close(out)
 	<-done
+	fmt.Println("done2")
 
 	for _, v := range dateFiles {
+		fmt.Println("Flushing and closing", v)
 		//final buffer flush
 		v.w.Flush()
 		exitOnErr(v.w.Error())
