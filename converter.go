@@ -10,7 +10,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -71,51 +70,43 @@ var csvFields = []string{
 	"event_ord",          //4
 	"uri_did",            //5
 	"event_lc",           //6
-	"uri_n",              //7
-	"event_lf",           //8
-	"uri_l",              //9
-	"event_dr",           //10
-	"event_sp",           //11
-	"uri_tz",             //12
-	"event_st",           //13
-	"remote_addr",        //14
-	"uri_av",             //15
-	"event_rid",          //16
-	"uri_access_token",   //17
-	"uri_an",             //18
-	"uri_app",            //19
-	"request_time_float", //20
-	"event_res",          //21
-	"uri_ov",             //22
-	"uri_os",             //23
-	"event_typ",          //24
-	"uri_kv",             //25
-	"event_ct",           //26
-	"uri_sv",             //27
-	"client_id",          //28
-	"request_uri",        //29
-	"event_vs",           //30
-	"event_ps",           //31
-	"event_ts",           //32
-	"event_n",            //33
-	"event_m",            //34
-	"event_tc",           //35
-	"uri_dm",             //36
-	"uri_fv",             //37
-	"event_tg",           //38
-	"event_sn",           //39
-	"uri_q",              //40
-	"uri_appkey",         //41
-	"uri_length",         //42
-	"uri_pretty",         //43
-	"uri_uid",            //44
-	"uri_title",          //45
-	"uri_category",       //46
-	"uri_id",             //47
-	"event_sc",           //48
-	"uri_f",              //49
-	"geo_country",        //50
-	"geo_city",           //51
+	"event_lf",           //7
+	"uri_l",              //8
+	"event_dr",           //9
+	"event_sp",           //10
+	"uri_tz",             //11
+	"event_st",           //12
+	"remote_addr",        //13
+	"uri_av",             //14
+	"event_rid",          //15
+	"uri_an",             //16
+	"uri_app",            //17
+	"request_time_float", //18
+	"event_res",          //19
+	"uri_ov",             //20
+	"uri_os",             //21
+	"event_typ",          //22
+	"uri_kv",             //23
+	"event_ct",           //24
+	"uri_sv",             //25
+	"client_id",          //26
+	"request_uri",        //27
+	"event_vs",           //28
+	"event_ps",           //29
+	"event_ts",           //30
+	"event_n",            //31
+	"event_m",            //32
+	"event_tc",           //33
+	"uri_dm",             //34
+	"uri_fv",             //35
+	"event_tg",           //36
+	"event_sn",           //37
+	"uri_q",              //38
+	"uri_uid",            //39
+	"uri_id",             //40
+	"event_sc",           //41
+	"geo_country",        //42
+	"geo_city",           //43
 }
 
 func toString(i interface{}) string {
@@ -148,16 +139,16 @@ func handleLog(c *cache.Cache, db *geoip2.Reader, logT *log.Log) []string {
 		out[3] = e.UID
 		out[4] = e.Ord
 		out[6] = toString(e.Lc)
-		out[8] = toString(e.Lf)
-		out[10] = toString(e.Dr)
-		out[11] = e.Sp
-		out[13] = e.St
-		out[16] = e.Rid
-		out[21] = toString(e.Resolution)
-		out[24] = toString(e.Type)
-		out[26] = toString(e.Ct)
-		out[30] = e.Vs
-		out[31] = e.Ps
+		out[7] = toString(e.Lf)
+		out[9] = toString(e.Dr)
+		out[10] = e.Sp
+		out[12] = e.St
+		out[15] = e.Rid
+		out[19] = toString(e.Resolution)
+		out[22] = toString(e.Type)
+		out[24] = toString(e.Ct)
+		out[28] = e.Vs
+		out[29] = e.Ps
 
 		var res = toString(e.Timestamp)
 		if e.Timestamp > 0 {
@@ -167,14 +158,14 @@ func handleLog(c *cache.Cache, db *geoip2.Reader, logT *log.Log) []string {
 				res = ut.Format("2006-01-02 03:04:05.0")
 			}
 		}
-		out[32] = res
 
-		out[33] = e.Name
-		out[34] = e.M
-		out[35] = toString(e.Tc)
-		out[38] = e.Tg
-		out[39] = e.Sn
-		out[48] = e.Sc
+		out[30] = res
+		out[31] = e.Name
+		out[32] = e.M
+		out[33] = toString(e.Tc)
+		out[36] = e.Tg
+		out[37] = e.Sn
+		out[41] = e.Sc
 	}
 
 	//loop key/value of request parameters
@@ -194,20 +185,20 @@ func handleLog(c *cache.Cache, db *geoip2.Reader, logT *log.Log) []string {
 		case "uri_d":
 			out[5] = vStr
 		case "uri_dt":
-			out[36] = vStr
+			out[34] = vStr
 		case "uri_v":
-			out[27] = vStr
+			out[25] = vStr
 		case "uri_p":
-			out[37] = vStr
+			out[35] = vStr
 		}
 	}
 
 	//Add remainding stuff
 	out[1] = logT.HTTPUserAgent
-	out[14] = logT.RemoteAddr
-	out[20] = logT.ParseRequestTime()
-	out[28] = logT.ClientID
-	out[29] = reqURI.Path
+	out[13] = logT.RemoteAddr
+	out[18] = logT.ParseRequestTime()
+	out[26] = logT.ClientID
+	out[27] = reqURI.Path
 
 	var cleanIP = strings.Trim(logT.RemoteAddr, "\n")
 	var city, country string
@@ -229,13 +220,14 @@ func handleLog(c *cache.Cache, db *geoip2.Reader, logT *log.Log) []string {
 		c.Add(cleanIP, city, country)
 	}
 
-	out[50] = country
-	out[51] = city
+	out[42] = country
+	out[43] = city
 	return out
 }
 
 type customWriter struct {
 	fp *os.File
+	zw *gzip.Writer
 	w  *csv.Writer
 }
 
@@ -260,10 +252,6 @@ func fanOut(in chan *string, out chan *[]string, wg *sync.WaitGroup, c *cache.Ca
 			//check if bad value exists and replace with empty string
 			if strings.Contains(line, "\"event\":[]") {
 				line = strings.Replace(line, "\"event\":[]", "", 1)
-				//check if beginning of bad value exists and replace with empty string
-			} else if strings.Contains(line, "\"event\":[") {
-				re := regexp.MustCompile("\"event\":[*]")
-				line = re.ReplaceAllString(line, "")
 			}
 
 			//unmarshal new log line
@@ -330,12 +318,15 @@ func main() {
 		fanOut(in, out, &wg, c, db)
 	}
 
+	var done = make(chan bool)
 	go func() {
+		var i = 0
+
 		for csvLinePtr := range out {
 			var csvLine = *csvLinePtr
 
 			//var t1 = logT.ParseRequestTime()
-			var t1 = csvLine[20] //request time
+			var t1 = csvLine[18] //request time
 			var outfile = fmt.Sprintf("%s/sdk-log-%s.csv.gz", filepath.Dir(fname), strings.Replace(strings.Split(t1, " ")[0], "-", ".", -1))
 
 			cw, exists := dateFiles[outfile]
@@ -343,23 +334,29 @@ func main() {
 				//create and wrap file pointer with gzipped csv writer
 				fp, err := os.OpenFile(outfile, os.O_RDWR|os.O_CREATE, 0766)
 				exitOnErr(err)
-				zipWriter := gzip.NewWriter(fp)
-				defer zipWriter.Close()
-
-				w := csv.NewWriter(zipWriter)
+				zw := gzip.NewWriter(fp)
+				w := csv.NewWriter(zw)
 				//create new custom writer
 				cw = &customWriter{
 					fp,
+					zw,
 					w,
 				}
 				//store for later use
 				dateFiles[outfile] = cw
 			}
-
 			exitOnErr(cw.w.Write(csvLine))
-			cw.w.Flush()
-			exitOnErr(cw.w.Error())
+
+			//batch records to write to disk every 100k
+			if i%100000 == 0 && i != 0 {
+				for _, v := range dateFiles {
+					v.w.Flush()
+					exitOnErr(v.w.Error())
+				}
+			}
 		}
+
+		done <- true
 	}()
 
 	//read until EOF
@@ -376,9 +373,16 @@ func main() {
 
 	close(in)
 	wg.Wait()
+
 	close(out)
+	<-done
 
 	for _, v := range dateFiles {
-		v.fp.Close()
+		//final buffer flush
+		v.w.Flush()
+		exitOnErr(v.w.Error())
+
+		exitOnErr(v.zw.Close())
+		exitOnErr(v.fp.Close())
 	}
 }
