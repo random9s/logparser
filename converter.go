@@ -118,39 +118,60 @@ var csvFields = []string{
 	"geo_city",           //51
 }
 
+func toString(i interface{}) string {
+	var str string
+	switch i.(type) {
+	case uint, uint8, uint16, uint32, uint64,
+		int, int8, int16, int32, int64:
+		var v = i.(int64)
+		if v != 0 {
+			str = strconv.FormatInt(v, 10)
+		}
+	case float32, float64:
+		var v = i.(float64)
+		if v != 0.0 {
+			str = strconv.FormatFloat(v, 'E', -1, 64)
+		}
+	}
+
+	return str
+}
+
 func handleLog(c *cache.Cache, db *geoip2.Reader, logT *log.Log) []string {
 	var out = make([]string, len(csvFields), len(csvFields))
 
 	//handle event section
 	var e = logT.Event
 	if logT.Event != nil {
-		out[0] = strconv.FormatInt(e.Fc, 10)
+		out[0] = toString(e.Fc)
 		out[2] = e.Ori
 		out[3] = e.UID
 		out[4] = e.Ord
-		out[6] = strconv.FormatInt(e.Lc, 10)
-		out[8] = strconv.FormatInt(e.Lf, 10)
-		out[10] = strconv.FormatInt(e.Dr, 10)
+		out[6] = toString(e.Lc)
+		out[8] = toString(e.Lf)
+		out[10] = toString(e.Dr)
 		out[11] = e.Sp
 		out[13] = e.St
 		out[16] = e.Rid
-		out[21] = strconv.FormatInt(e.Resolution, 10)
-		out[24] = strconv.FormatInt(e.Type, 10)
-		out[26] = strconv.FormatInt(e.Ct, 10)
+		out[21] = toString(e.Resolution)
+		out[24] = toString(e.Type)
+		out[26] = toString(e.Ct)
 		out[30] = e.Vs
 		out[31] = e.Ps
 
-		var res = strconv.FormatInt(e.Timestamp, 10)
+		var res = toString(e.Timestamp)
 		if e.Timestamp > 0 {
 			var t1 = int64(e.Timestamp / 1000)
-			var ut = time.Unix(t1, 0)
-			res = ut.Format("2006-01-02 03:04:05.0")
+			if t1 > 0 {
+				var ut = time.Unix(t1, 0)
+				res = ut.Format("2006-01-02 03:04:05.0")
+			}
 		}
 		out[32] = res
 
 		out[33] = e.Name
 		out[34] = e.M
-		out[35] = strconv.FormatInt(e.Tc, 10)
+		out[35] = toString(e.Tc)
 		out[38] = e.Tg
 		out[39] = e.Sn
 		out[48] = e.Sc
