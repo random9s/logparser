@@ -58,5 +58,9 @@ func (l *Log) ParseReqURI() (*url.URL, error) {
 //ParseIP ...
 func (l *Log) ParseIP() net.IP {
 	var cleanIP = strings.Trim(l.RemoteAddr, "\n")
+	if cleanIP == "" {
+		return nil
+	}
+
 	return net.ParseIP(cleanIP)
 }

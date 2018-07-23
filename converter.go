@@ -205,19 +205,21 @@ func handleLog(c *cache.Cache, db *geoip2.Reader, logT *log.Log) []string {
 	city, country, ok := c.Load(cleanIP)
 	if !ok {
 		ip := net.ParseIP(cleanIP)
-		record, err := db.City(ip)
-		exitOnErr(err)
+		if ip != nil {
+			record, err := db.City(ip)
+			exitOnErr(err)
 
-		city, ok = record.City.Names["en"]
-		if !ok {
-			city = "nil"
-		}
-		country, ok = record.Country.Names["en"]
-		if !ok {
-			country = "nil"
-		}
+			city, ok = record.City.Names["en"]
+			if !ok {
+				city = "nil"
+			}
+			country, ok = record.Country.Names["en"]
+			if !ok {
+				country = "nil"
+			}
 
-		c.Add(cleanIP, city, country)
+			c.Add(cleanIP, city, country)
+		}
 	}
 
 	out[42] = country
