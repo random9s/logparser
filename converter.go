@@ -31,6 +31,8 @@ var (
 	in       bool
 	cpu, mem bool
 	tuner    int
+
+	readLines, writeLines int64
 )
 
 func parseFlags() {
@@ -334,7 +336,7 @@ func main() {
 			cw, exists := dateFiles[outfile]
 			if !exists {
 				//create and wrap file pointer with gzipped csv writer
-				fp, err := os.OpenFile(outfile, os.O_RDWR|os.O_CREATE, 0766)
+				fp, err := os.OpenFile(outfile, os.O_APPEND|os.O_RDWR|os.O_CREATE, 0766)
 				exitOnErr(err)
 				zw := gzip.NewWriter(fp)
 				w := csv.NewWriter(zw)
@@ -347,7 +349,9 @@ func main() {
 				//store for later use
 				dateFiles[outfile] = cw
 			}
+
 			exitOnErr(cw.w.Write(csvLine))
+			writeLines++
 
 			//batch records to write to disk every 100k
 			if i%1000000 == 0 && i != 0 {
@@ -371,6 +375,7 @@ func main() {
 		exitOnErr(err)
 
 		in <- &line
+		readLines++
 	}
 
 	close(in)
@@ -387,4 +392,6 @@ func main() {
 		exitOnErr(v.zw.Close())
 		exitOnErr(v.fp.Close())
 	}
+
+	fmt.Printf("Read %d lines, wrote %d lines\n", readLines, writeLines)
 }
