@@ -178,9 +178,9 @@ func handleLog(c *cache.Cache, db *geoip2.Reader, logT *log.Log) []string {
 	}
 
 	//loop key/value of request parameters
-	u, err := logT.ParseReqURI()
+	reqURI, err := logT.ParseReqURI()
 	exitOnErr(err)
-	for k, v := range u.Query() {
+	for k, v := range reqURI.Query() {
 		var k = "uri_" + strings.ToLower(k)
 		var vStr = strings.Join(v, "+")
 
@@ -207,7 +207,7 @@ func handleLog(c *cache.Cache, db *geoip2.Reader, logT *log.Log) []string {
 	out[14] = logT.RemoteAddr
 	out[20] = logT.ParseRequestTime()
 	out[28] = logT.ClientID
-	out[29] = logT.ReqURI
+	out[29] = reqURI.Path
 
 	var cleanIP = strings.Trim(logT.RemoteAddr, "\n")
 	var city, country string
@@ -314,6 +314,7 @@ func main() {
 	} else if in {
 		zipReader, err := gzip.NewReader(os.Stdin)
 		exitOnErr(err)
+		defer zipReader.Close()
 
 		reader = bufio.NewReader(zipReader)
 	}
@@ -342,7 +343,10 @@ func main() {
 				//create and wrap file pointer with gzipped csv writer
 				fp, err := os.OpenFile(outfile, os.O_RDWR|os.O_CREATE, 0766)
 				exitOnErr(err)
-				w := csv.NewWriter(gzip.NewWriter(fp))
+				zipWriter := gzip.NewWriter(fp)
+				defer zipWriter.Close()
+
+				w := csv.NewWriter(zipWriter)
 				//create new custom writer
 				cw = &customWriter{
 					fp,

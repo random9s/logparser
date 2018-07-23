@@ -52,7 +52,7 @@ func (l *Log) ParseRequestTime() string {
 
 //ParseReqURI ...
 func (l *Log) ParseReqURI() (*url.URL, error) {
-	return url.Parse(l.ReqURI)
+	return url.ParseRequestURI(l.ReqURI)
 }
 
 //ParseIP ...
