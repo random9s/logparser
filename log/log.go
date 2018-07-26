@@ -52,11 +52,15 @@ func (l *Log) ParseRequestTime() string {
 
 //ParseReqURI ...
 func (l *Log) ParseReqURI() (*url.URL, error) {
-	return url.Parse(l.ReqURI)
+	return url.ParseRequestURI(l.ReqURI)
 }
 
 //ParseIP ...
 func (l *Log) ParseIP() net.IP {
 	var cleanIP = strings.Trim(l.RemoteAddr, "\n")
+	if cleanIP == "" {
+		return nil
+	}
+
 	return net.ParseIP(cleanIP)
 }

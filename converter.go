@@ -10,9 +10,10 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/oschwald/geoip2-golang"
@@ -29,6 +30,9 @@ var (
 	help     bool
 	in       bool
 	cpu, mem bool
+	tuner    int
+
+	readLines, writeLines int64
 )
 
 func parseFlags() {
@@ -37,6 +41,7 @@ func parseFlags() {
 	flag.BoolVar(&mem, "mem", false, "profile memory (can only run cpu or mem, not both)")
 	flag.BoolVar(&in, "i", false, "read from stdin")
 	flag.BoolVar(&help, "h", false, "print help")
+	flag.IntVar(&tuner, "t", 1, "number will be multiplied by number of logical cores")
 	flag.Parse()
 
 	if help {
@@ -67,51 +72,62 @@ var csvFields = []string{
 	"event_ord",          //4
 	"uri_did",            //5
 	"event_lc",           //6
-	"uri_n",              //7
-	"event_lf",           //8
-	"uri_l",              //9
-	"event_dr",           //10
-	"event_sp",           //11
-	"uri_tz",             //12
-	"event_st",           //13
-	"remote_addr",        //14
-	"uri_av",             //15
-	"event_rid",          //16
-	"uri_access_token",   //17
-	"uri_an",             //18
-	"uri_app",            //19
-	"request_time_float", //20
-	"event_res",          //21
-	"uri_ov",             //22
-	"uri_os",             //23
-	"event_typ",          //24
-	"uri_kv",             //25
-	"event_ct",           //26
-	"uri_sv",             //27
-	"client_id",          //28
-	"request_uri",        //29
-	"event_vs",           //30
-	"event_ps",           //31
-	"event_ts",           //32
-	"event_n",            //33
-	"event_m",            //34
-	"event_tc",           //35
-	"uri_dm",             //36
-	"uri_fv",             //37
-	"event_tg",           //38
-	"event_sn",           //39
-	"uri_q",              //40
-	"uri_appkey",         //41
-	"uri_length",         //42
-	"uri_pretty",         //43
-	"uri_uid",            //44
-	"uri_title",          //45
-	"uri_category",       //46
-	"uri_id",             //47
-	"event_sc",           //48
-	"uri_f",              //49
-	"geo_country",        //50
-	"geo_city",           //51
+	"event_lf",           //7
+	"uri_l",              //8
+	"event_dr",           //9
+	"event_sp",           //10
+	"uri_tz",             //11
+	"event_st",           //12
+	"remote_addr",        //13
+	"uri_av",             //14
+	"event_rid",          //15
+	"uri_an",             //16
+	"uri_app",            //17
+	"request_time_float", //18
+	"event_res",          //19
+	"uri_ov",             //20
+	"uri_os",             //21
+	"event_typ",          //22
+	"uri_kv",             //23
+	"event_ct",           //24
+	"uri_sv",             //25
+	"client_id",          //26
+	"request_uri",        //27
+	"event_vs",           //28
+	"event_ps",           //29
+	"event_ts",           //30
+	"event_n",            //31
+	"event_m",            //32
+	"event_tc",           //33
+	"uri_dm",             //34
+	"uri_fv",             //35
+	"event_tg",           //36
+	"event_sn",           //37
+	"uri_q",              //38
+	"uri_uid",            //39
+	"uri_id",             //40
+	"event_sc",           //41
+	"geo_country",        //42
+	"geo_city",           //43
+}
+
+func toString(i interface{}) string {
+	var str string
+	switch i.(type) {
+	case uint, uint8, uint16, uint32, uint64,
+		int, int8, int16, int32, int64:
+		var v = i.(int64)
+		if v != 0 {
+			str = strconv.FormatInt(v, 10)
+		}
+	case float32, float64:
+		var v = i.(float64)
+		if v != 0.0 {
+			str = strconv.FormatFloat(v, 'E', -1, 64)
+		}
+	}
+
+	return str
 }
 
 func handleLog(c *cache.Cache, db *geoip2.Reader, logT *log.Log) []string {
@@ -120,42 +136,44 @@ func handleLog(c *cache.Cache, db *geoip2.Reader, logT *log.Log) []string {
 	//handle event section
 	var e = logT.Event
 	if logT.Event != nil {
-		out[0] = strconv.FormatInt(e.Fc, 10)
+		out[0] = toString(e.Fc)
 		out[2] = e.Ori
 		out[3] = e.UID
 		out[4] = e.Ord
-		out[6] = strconv.FormatInt(e.Lc, 10)
-		out[8] = strconv.FormatInt(e.Lf, 10)
-		out[10] = strconv.FormatInt(e.Dr, 10)
-		out[11] = e.Sp
-		out[13] = e.St
-		out[16] = e.Rid
-		out[21] = strconv.FormatInt(e.Resolution, 10)
-		out[24] = strconv.FormatInt(e.Type, 10)
-		out[26] = strconv.FormatInt(e.Ct, 10)
-		out[30] = e.Vs
-		out[31] = e.Ps
+		out[6] = toString(e.Lc)
+		out[7] = toString(e.Lf)
+		out[9] = toString(e.Dr)
+		out[10] = e.Sp
+		out[12] = e.St
+		out[15] = e.Rid
+		out[19] = toString(e.Resolution)
+		out[22] = toString(e.Type)
+		out[24] = toString(e.Ct)
+		out[28] = e.Vs
+		out[29] = e.Ps
 
-		var res = strconv.FormatInt(e.Timestamp, 10)
+		var res = toString(e.Timestamp)
 		if e.Timestamp > 0 {
 			var t1 = int64(e.Timestamp / 1000)
-			var ut = time.Unix(t1, 0)
-			res = ut.Format("2006-01-02 03:04:05.0")
+			if t1 > 0 {
+				var ut = time.Unix(t1, 0)
+				res = ut.Format("2006-01-02 03:04:05.0")
+			}
 		}
-		out[32] = res
 
-		out[33] = e.Name
-		out[34] = e.M
-		out[35] = strconv.FormatInt(e.Tc, 10)
-		out[38] = e.Tg
-		out[39] = e.Sn
-		out[48] = e.Sc
+		out[30] = res
+		out[31] = e.Name
+		out[32] = e.M
+		out[33] = toString(e.Tc)
+		out[36] = e.Tg
+		out[37] = e.Sn
+		out[41] = e.Sc
 	}
 
 	//loop key/value of request parameters
-	u, err := logT.ParseReqURI()
+	reqURI, err := logT.ParseReqURI()
 	exitOnErr(err)
-	for k, v := range u.Query() {
+	for k, v := range reqURI.Query() {
 		var k = "uri_" + strings.ToLower(k)
 		var vStr = strings.Join(v, "+")
 
@@ -169,49 +187,92 @@ func handleLog(c *cache.Cache, db *geoip2.Reader, logT *log.Log) []string {
 		case "uri_d":
 			out[5] = vStr
 		case "uri_dt":
-			out[36] = vStr
+			out[34] = vStr
 		case "uri_v":
-			out[27] = vStr
+			out[25] = vStr
 		case "uri_p":
-			out[37] = vStr
+			out[35] = vStr
 		}
 	}
 
 	//Add remainding stuff
 	out[1] = logT.HTTPUserAgent
-	out[14] = logT.RemoteAddr
-	out[20] = logT.ParseRequestTime()
-	out[28] = logT.ClientID
-	out[29] = logT.ReqURI
+	out[13] = logT.RemoteAddr
+	out[18] = logT.ParseRequestTime()
+	out[26] = logT.ClientID
+	out[27] = reqURI.Path
 
 	var cleanIP = strings.Trim(logT.RemoteAddr, "\n")
 	var city, country string
 	city, country, ok := c.Load(cleanIP)
 	if !ok {
 		ip := net.ParseIP(cleanIP)
-		record, err := db.City(ip)
-		exitOnErr(err)
+		if ip != nil {
+			record, err := db.City(ip)
+			exitOnErr(err)
 
-		city, ok = record.City.Names["en"]
-		if !ok {
-			city = "nil"
-		}
-		country, ok = record.Country.Names["en"]
-		if !ok {
-			country = "nil"
-		}
+			city, ok = record.City.Names["en"]
+			if !ok {
+				city = "nil"
+			}
+			country, ok = record.Country.Names["en"]
+			if !ok {
+				country = "nil"
+			}
 
-		c.Add(cleanIP, city, country)
+			c.Add(cleanIP, city, country)
+		}
 	}
 
-	out[50] = country
-	out[51] = city
+	out[42] = country
+	out[43] = city
 	return out
 }
 
 type customWriter struct {
 	fp *os.File
+	zw *gzip.Writer
 	w  *csv.Writer
+}
+
+func fanOut(in chan *string, out chan *[]string, wg *sync.WaitGroup, c *cache.Cache, db *geoip2.Reader) {
+	wg.Add(1)
+
+	go func() {
+		//all log lines start with something similar to this, so we'll just cut this from the beginning of every line
+		var trimN = len("[2017-12-01 20:55:08 ~ SDK ~ 0] ")
+
+		for linePtr := range in {
+			line := *linePtr
+
+			//All log lines should begin with the same thing, so we can trim that immediately
+			line = line[trimN:]
+
+			//Always remove newline
+			if line[len(line)-1] == byte(10) {
+				line = line[:len(line)-1]
+			}
+
+			//check if bad value exists and replace with empty string
+			if strings.Contains(line, "\"event\":[]") {
+				line = strings.Replace(line, "\"event\":[]", "", 1)
+			}
+
+			//unmarshal new log line
+			var logT = new(log.Log)
+			//exitOnErr(ffjson.Unmarshal([]byte(line), logT))
+			err := ffjson.Unmarshal([]byte(line), logT)
+			if err != nil {
+				continue
+			}
+
+			//create csv line
+			var csvLine = handleLog(c, db, logT)
+			out <- &csvLine
+		}
+
+		wg.Done()
+	}()
 }
 
 func main() {
@@ -222,6 +283,7 @@ func main() {
 	}
 
 	parseFlags()
+
 	//prep cache
 	c := cache.New()
 
@@ -248,6 +310,7 @@ func main() {
 	} else if in {
 		zipReader, err := gzip.NewReader(os.Stdin)
 		exitOnErr(err)
+		defer zipReader.Close()
 
 		reader = bufio.NewReader(zipReader)
 	}
@@ -255,8 +318,57 @@ func main() {
 	//create map for files and close all files on exit
 	var dateFiles = make(map[string]*customWriter)
 
-	//all log lines start with something similar to this, so we'll just cut this from the beginning of every line
-	var trimN = len("[2017-12-01 20:55:08 ~ SDK ~ 0] ")
+	var in = make(chan *string)
+	var out = make(chan *[]string)
+	var wg = sync.WaitGroup{}
+
+	for i := 0; i < runtime.NumCPU()*tuner; i++ {
+		fanOut(in, out, &wg, c, db)
+	}
+
+	var done = make(chan bool)
+	go func() {
+		var i = 0
+
+		for csvLinePtr := range out {
+			var csvLine = *csvLinePtr
+
+			//var t1 = logT.ParseRequestTime()
+			var t1 = csvLine[18] //request time
+			var outfile = fmt.Sprintf("%s/sdk-log-%s.csv.gz", filepath.Dir(fname), strings.Replace(strings.Split(t1, " ")[0], "-", ".", -1))
+
+			cw, exists := dateFiles[outfile]
+			if !exists {
+				//create and wrap file pointer with gzipped csv writer
+				fp, err := os.OpenFile(outfile, os.O_APPEND|os.O_RDWR|os.O_CREATE, 0766)
+				exitOnErr(err)
+				zw := gzip.NewWriter(fp)
+				w := csv.NewWriter(zw)
+				//create new custom writer
+				cw = &customWriter{
+					fp,
+					zw,
+					w,
+				}
+				//store for later use
+				dateFiles[outfile] = cw
+			}
+
+			exitOnErr(cw.w.Write(csvLine))
+			writeLines++
+
+			//batch records to write to disk every 100k
+			if i%1000000 == 0 && i != 0 {
+				for _, v := range dateFiles {
+					v.w.Flush()
+					exitOnErr(v.w.Error())
+				}
+			}
+		}
+
+		done <- true
+	}()
+
 	//read until EOF
 	for {
 		//Read and clean json line
@@ -266,54 +378,24 @@ func main() {
 		}
 		exitOnErr(err)
 
-		//All log lines should begin with the same thing, so we can trim that immediately
-		line = line[trimN:]
-
-		//Always remove newline
-		if line[len(line)-1] == byte(10) {
-			line = line[:len(line)-1]
-		}
-
-		//check if bad value exists and replace with empty string
-		if strings.Contains(line, "\"event\":[]") {
-			line = strings.Replace(line, "\"event\":[]", "", 1)
-			//check if beginning of bad value exists and replace with empty string
-		} else if strings.Contains(line, "\"event\":[") {
-			re := regexp.MustCompile("\"event\":[*]")
-			line = re.ReplaceAllString(line, "")
-		}
-
-		//unmarshal new log line
-		var logT = new(log.Log)
-		exitOnErr(ffjson.Unmarshal([]byte(line), logT))
-
-		//create csv line
-		var csvLine = handleLog(c, db, logT)
-
-		//var t1 = logT.ParseRequestTime()
-		var t1 = csvLine[20] //request time
-		var outfile = fmt.Sprintf("%s/sdk-log-%s.csv.gz", filepath.Dir(fname), strings.Replace(strings.Split(t1, " ")[0], "-", ".", -1))
-		cw, exists := dateFiles[outfile]
-		if !exists {
-			//create and wrap file pointer with gzipped csv writer
-			fp, err := os.OpenFile(outfile, os.O_RDWR|os.O_CREATE, 0766)
-			exitOnErr(err)
-			w := csv.NewWriter(gzip.NewWriter(fp))
-			//create new custom writer
-			cw = &customWriter{
-				fp,
-				w,
-			}
-			//store for later use
-			dateFiles[outfile] = cw
-		}
-
-		exitOnErr(cw.w.Write(csvLine))
-		cw.w.Flush()
-		exitOnErr(cw.w.Error())
+		in <- &line
+		readLines++
 	}
+
+	close(in)
+	wg.Wait()
+
+	close(out)
+	<-done
 
 	for _, v := range dateFiles {
-		v.fp.Close()
+		//final buffer flush
+		v.w.Flush()
+		exitOnErr(v.w.Error())
+
+		exitOnErr(v.zw.Close())
+		exitOnErr(v.fp.Close())
 	}
+
+	fmt.Printf("Read %d lines, wrote %d lines\n", readLines, writeLines)
 }
