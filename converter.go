@@ -260,7 +260,11 @@ func fanOut(in chan *string, out chan *[]string, wg *sync.WaitGroup, c *cache.Ca
 
 			//unmarshal new log line
 			var logT = new(log.Log)
-			exitOnErr(ffjson.Unmarshal([]byte(line), logT))
+			//exitOnErr(ffjson.Unmarshal([]byte(line), logT))
+			err := ffjson.Unmarshal([]byte(line), logT)
+			if err != nil {
+				continue
+			}
 
 			//create csv line
 			var csvLine = handleLog(c, db, logT)
